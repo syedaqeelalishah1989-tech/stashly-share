@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Shared List — Stashly</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f6f8fa;color:#1a1a2e;min-height:100vh}
+    header{background:#1B8C6E;color:#fff;padding:20px 24px}
+    header h1{font-size:22px;font-weight:800}
+    .sub{font-size:13px;opacity:.8;margin-top:4px}
+    .badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;margin-top:8px}
+    .brand{font-size:11px;opacity:.6;margin-top:6px}
+    main{max-width:720px;margin:0 auto;padding:20px 16px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+    .card{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    .card-img{height:130px;background:#EDF7F4;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .card-img img{width:100%;height:100%;object-fit:cover}
+    .placeholder{font-size:36px}
+    .card-body{padding:12px}
+    .card-body h3{font-size:14px;font-weight:700;margin-bottom:5px;line-height:1.3}
+    .loc{font-size:12px;color:#666;margin-bottom:3px}
+    .cond{font-size:11px;color:#888;font-style:italic}
+    .tags{font-size:11px;color:#1B8C6E;margin-top:4px}
+    .stock{display:inline-block;font-size:11px;font-weight:600;background:#E8F5F1;color:#1B8C6E;padding:2px 8px;border-radius:99px;margin-top:5px}
+    .stock.low{background:#FFF3E0;color:#E65100}
+    .empty,.error{text-align:center;color:#999;padding:60px 20px;font-size:15px}
+    .error{color:#c0392b}
+    footer{text-align:center;color:#aaa;font-size:12px;padding:32px 16px}
+    footer a{color:#1B8C6E;text-decoration:none;font-weight:600}
+    .loading{display:flex;align-items:center;justify-content:center;min-height:60vh;font-size:15px;color:#999}
+  </style>
+</head>
+<body>
+  <div id="app"><div class="loading">Loading…</div></div>
+
+  <script>
+    const SUPABASE_URL = 'https://rubzlsgrexseybhwjzyr.supabase.co';
+    const SUPABASE_ANON_KEY = 'PASTE_YOUR_ANON_KEY_HERE';
+
+    async function load() {
+      const slug = new URLSearchParams(location.search).get('slug');
+      if (!slug) { render(null, null); return; }
+
+      const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      };
+
+      // Fetch list
+      const listRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/lists?share_slug=eq.${slug}&is_public=eq.true&select=id,name,description`,
+        { headers }
+      );
+      const lists = await listRes.json();
+      const list = lists?.[0];
+      if (!list) { render(null, null); return; }
+
+      // Fetch items via list_items → items join
+      const itemsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/list_items?list_id=eq.${list.id}&select=items(id,name,location,tags,image_uris,image_url,condition,is_consumable,stock_count)`,
+        { headers }
+      );
+      const rows = await itemsRes.json();
+      const items = (rows || []).map(r => r.items).filter(Boolean);
+
+      render(list, items);
+    }
+
+    function esc(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function render(list, items) {
+      if (!list) {
+        document.getElementById('app').innerHTML = `
+          <header><h1>Stashly</h1></header>
+          <main><div class="error">😕 This list is not available or has been made private.</div></main>
+          <footer>Made with <a href="https://stashly.app">Stashly</a></footer>`;
+        return;
+      }
+
+      const cards = !items || items.length === 0
+        ? '<div class="empty">No items in this list yet.</div>'
+        : items.map(item => {
+            const img = item.image_uris?.[0] ?? item.image_url ?? null;
+            const tags = (item.tags || []).slice(0,3).join(', ');
+            const stock = item.is_consumable
+              ? `<span class="stock ${(item.stock_count||0)<=1?'low':''}">${(item.stock_count||0)===0?'Out of stock':item.stock_count+' in stock'}</span>` : '';
+            return `<div class="card">
+              <div class="card-img">${img
+                ? `<img src="${esc(img)}" alt="${esc(item.name)}" loading="lazy"/>`
+                : '<span class="placeholder">📦</span>'}</div>
+              <div class="card-body">
+                <h3>${esc(item.name)}</h3>
+                ${item.location ? `<p class="loc">📍 ${esc(item.location)}</p>` : ''}
+                ${item.condition ? `<p class="cond">${esc(item.condition)}</p>` : ''}
+                ${tags ? `<p class="tags">${esc(tags)}</p>` : ''}
+                ${stock}
+              </div>
+            </div>`;
+          }).join('');
+
+      document.title = esc(list.name) + ' — Stashly';
+      document.getElementById('app').innerHTML = `
+        <header>
+          <h1>${esc(list.name)}</h1>
+          ${list.description ? `<p class="sub">${esc(list.description)}</p>` : ''}
+          <span class="badge">📦 ${items.length} item${items.length!==1?'s':''}</span>
+          <p class="brand">Shared via Stashly</p>
+        </header>
+        <main><div class="grid">${cards}</div></main>
+        <footer>Made with <a href="https://stashly.app">Stashly</a></footer>`;
+    }
+
+    load().catch(() => render(null, null));
+  </script>
+</body>
+</html>
