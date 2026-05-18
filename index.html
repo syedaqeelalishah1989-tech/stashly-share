@@ -10,21 +10,45 @@
     header{background:#1B8C6E;color:#fff;padding:20px 24px}
     header h1{font-size:22px;font-weight:800}
     .sub{font-size:13px;opacity:.8;margin-top:4px}
-    .badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;margin-top:8px}
+    .badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;margin-top:8px;margin-right:6px}
+    .gift-badge{background:rgba(255,200,0,.25)}
     .brand{font-size:11px;opacity:.6;margin-top:6px}
     main{max-width:720px;margin:0 auto;padding:20px 16px}
     .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
-    .card{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    .card{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);position:relative;transition:transform .15s}
+    .card:hover{transform:translateY(-2px)}
+    .card.gifted{opacity:.75}
     .card-img{height:130px;background:#EDF7F4;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .card-img img{width:100%;height:100%;object-fit:cover}
     .placeholder{font-size:36px}
     .card-body{padding:12px}
     .card-body h3{font-size:14px;font-weight:700;margin-bottom:5px;line-height:1.3}
+    .notes{font-size:11px;color:#555;margin-bottom:4px;line-height:1.4}
     .loc{font-size:12px;color:#666;margin-bottom:3px}
     .cond{font-size:11px;color:#888;font-style:italic}
     .tags{font-size:11px;color:#1B8C6E;margin-top:4px}
     .stock{display:inline-block;font-size:11px;font-weight:600;background:#E8F5F1;color:#1B8C6E;padding:2px 8px;border-radius:99px;margin-top:5px}
     .stock.low{background:#FFF3E0;color:#E65100}
+    /* Gifted overlay */
+    .gifted-overlay{position:absolute;top:8px;right:8px;background:#2E7D32;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;display:flex;align-items:center;gap:4px}
+    .gifted-by{font-size:11px;color:#2E7D32;font-style:italic;margin-top:4px;font-weight:600}
+    /* Gift button */
+    .gift-btn{display:block;width:100%;margin-top:10px;padding:7px;background:#1B8C6E;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:center}
+    .gift-btn:hover{background:#157a5e}
+    .gift-btn:disabled{background:#aaa;cursor:not-allowed}
+    /* Modal */
+    .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+    .modal-backdrop.open{display:flex}
+    .modal{background:#fff;border-radius:16px;padding:24px;width:90%;max-width:360px}
+    .modal h3{font-size:16px;font-weight:800;margin-bottom:6px}
+    .modal p{font-size:13px;color:#666;margin-bottom:16px}
+    .modal input{width:100%;padding:10px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:14px;outline:none}
+    .modal input:focus{border-color:#1B8C6E}
+    .modal-btns{display:flex;gap:10px}
+    .modal-btns button{flex:1;padding:10px;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+    .btn-cancel{background:#f0f0f0;color:#333}
+    .btn-confirm{background:#1B8C6E;color:#fff}
+    .btn-confirm:disabled{background:#aaa}
     .empty,.error{text-align:center;color:#999;padding:60px 20px;font-size:15px}
     .error{color:#c0392b}
     footer{text-align:center;color:#aaa;font-size:12px;padding:32px 16px}
@@ -35,44 +59,64 @@
 <body>
   <div id="app"><div class="loading">Loading…</div></div>
 
+  <!-- Gift name modal -->
+  <div class="modal-backdrop" id="giftModal">
+    <div class="modal">
+      <h3>🎁 Mark as Gifted</h3>
+      <p id="giftModalItemName"></p>
+      <input id="giftNameInput" type="text" placeholder="Your name (e.g. Aunt Sarah)" maxlength="60"/>
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="closeGiftModal()">Cancel</button>
+        <button class="btn-confirm" id="giftConfirmBtn" onclick="confirmGift()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const SUPABASE_URL = 'https://rubzlsgrexseybhwjzyr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1Ynpsc2dyZXhzZXliaHdqenlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMDc5MzEsImV4cCI6MjA5Mzg4MzkzMX0.CYqp-DsIXNl0AapZiz25P0R_UPDJzZnsbjntyp53suE';
+    const NOTIFY_URL = 'https://rubzlsgrexseybhwjzyr.supabase.co/functions/v1/super-service';
+
+    let currentListId = null;
+    let currentListName = null;
+    let pendingGiftListItemId = null;
+    let pendingGiftItemName = null;
+
+    const headers = {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+    };
 
     async function load() {
       const slug = new URLSearchParams(location.search).get('slug');
-      if (!slug) { render(null, null); return; }
+      if (!slug) { render(null, null, false); return; }
 
-      const headers = {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-      };
-
-      // Fetch list
       const listRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/lists?share_slug=eq.${slug}&is_public=eq.true&select=id,name,description`,
+        `${SUPABASE_URL}/rest/v1/lists?share_slug=eq.${slug}&is_public=eq.true&select=id,name,description,is_gift_registry`,
         { headers }
       );
       const lists = await listRes.json();
       const list = lists?.[0];
-      if (!list) { render(null, null); return; }
+      if (!list) { render(null, null, false); return; }
 
-      // Fetch items via list_items → items join
+      currentListId = list.id;
+      currentListName = list.name;
+
       const itemsRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/list_items?list_id=eq.${list.id}&select=items(id,name,location,tags,image_uris,image_url,condition,is_consumable,stock_count)`,
+        `${SUPABASE_URL}/rest/v1/list_items?list_id=eq.${list.id}&select=id,gifted_by,gifted_at,items(id,name,location,tags,image_uris,image_url,notes,condition,is_consumable,stock_count)`,
         { headers }
       );
       const rows = await itemsRes.json();
-      const items = (rows || []).map(r => r.items).filter(Boolean);
+      const entries = (rows || []).map(r => ({ ...r.items, listItemId: r.id, giftedBy: r.gifted_by, giftedAt: r.gifted_at })).filter(e => e && e.id);
 
-      render(list, items);
+      render(list, entries, list.is_gift_registry);
     }
 
     function esc(str) {
       return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function render(list, items) {
+    function render(list, entries, isGiftRegistry) {
       if (!list) {
         document.getElementById('app').innerHTML = `
           <header><h1>Stashly</h1></header>
@@ -81,23 +125,37 @@
         return;
       }
 
-      const cards = !items || items.length === 0
+      const giftedCount = (entries || []).filter(e => e.giftedBy).length;
+      const totalCount = (entries || []).length;
+
+      const cards = !entries || entries.length === 0
         ? '<div class="empty">No items in this list yet.</div>'
-        : items.map(item => {
+        : entries.map(item => {
             const img = item.image_uris?.[0] ?? item.image_url ?? null;
             const tags = (item.tags || []).slice(0,3).join(', ');
+            const isGifted = !!item.giftedBy;
             const stock = item.is_consumable
               ? `<span class="stock ${(item.stock_count||0)<=1?'low':''}">${(item.stock_count||0)===0?'Out of stock':item.stock_count+' in stock'}</span>` : '';
-            return `<div class="card">
+
+            return `<div class="card${isGifted?' gifted':''}">
+              ${isGifted ? `<div class="gifted-overlay">✓ Gifted</div>` : ''}
               <div class="card-img">${img
                 ? `<img src="${esc(img)}" alt="${esc(item.name)}" loading="lazy"/>`
                 : '<span class="placeholder">📦</span>'}</div>
               <div class="card-body">
                 <h3>${esc(item.name)}</h3>
-                ${item.location ? `<p class="loc">📍 ${esc(item.location)}</p>` : ''}
+                ${item.notes && !isGiftRegistry ? '' : ''}
+                ${item.notes ? `<p class="notes">${esc(item.notes)}</p>` : ''}
+                ${!isGiftRegistry && item.location ? `<p class="loc">📍 ${esc(item.location)}</p>` : ''}
                 ${item.condition ? `<p class="cond">${esc(item.condition)}</p>` : ''}
                 ${tags ? `<p class="tags">${esc(tags)}</p>` : ''}
                 ${stock}
+                ${isGifted
+                  ? `<p class="gifted-by">🎁 Gifted by ${esc(item.giftedBy)}</p>`
+                  : isGiftRegistry
+                    ? `<button class="gift-btn" onclick="openGiftModal('${esc(item.listItemId)}','${esc(item.name).replace(/'/g,"\\'")}')">🎁 Mark as Gifted</button>`
+                    : ''
+                }
               </div>
             </div>`;
           }).join('');
@@ -107,14 +165,73 @@
         <header>
           <h1>${esc(list.name)}</h1>
           ${list.description ? `<p class="sub">${esc(list.description)}</p>` : ''}
-          <span class="badge">📦 ${items.length} item${items.length!==1?'s':''}</span>
+          <span class="badge">📦 ${totalCount} item${totalCount!==1?'s':''}</span>
+          ${isGiftRegistry ? `<span class="badge gift-badge">🎁 Gift Registry${giftedCount>0?' · '+giftedCount+' gifted':''}</span>` : ''}
           <p class="brand">Shared via Stashly</p>
         </header>
         <main><div class="grid">${cards}</div></main>
         <footer>Made with <a href="https://stashly.app">Stashly</a></footer>`;
     }
 
-    load().catch(() => render(null, null));
+    function openGiftModal(listItemId, itemName) {
+      pendingGiftListItemId = listItemId;
+      pendingGiftItemName = itemName;
+      document.getElementById('giftModalItemName').textContent = 'Mark "' + itemName + '" as gifted?';
+      document.getElementById('giftNameInput').value = '';
+      document.getElementById('giftModal').classList.add('open');
+      setTimeout(() => document.getElementById('giftNameInput').focus(), 100);
+    }
+
+    function closeGiftModal() {
+      document.getElementById('giftModal').classList.remove('open');
+      pendingGiftListItemId = null;
+      pendingGiftItemName = null;
+    }
+
+    async function confirmGift() {
+      const name = document.getElementById('giftNameInput').value.trim();
+      if (!name) { document.getElementById('giftNameInput').focus(); return; }
+
+      const btn = document.getElementById('giftConfirmBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        // Mark as gifted in DB
+        const patchRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/list_items?id=eq.${pendingGiftListItemId}`,
+          {
+            method: 'PATCH',
+            headers: { ...headers, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ gifted_by: name, gifted_at: new Date().toISOString() }),
+          }
+        );
+
+        if (!patchRes.ok && patchRes.status !== 204) throw new Error('Could not save');
+
+        // Notify owner via Edge Function
+        fetch(NOTIFY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            list_id: currentListId,
+            list_name: currentListName,
+            item_name: pendingGiftItemName,
+            gifted_by: name,
+          }),
+        }).catch(() => {}); // fire and forget
+
+        closeGiftModal();
+        // Reload to show updated state
+        await load();
+      } catch (e) {
+        alert('Could not save — please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Confirm';
+      }
+    }
+
+    load().catch(() => render(null, null, false));
   </script>
 </body>
 </html>
